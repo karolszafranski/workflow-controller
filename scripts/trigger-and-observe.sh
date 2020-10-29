@@ -53,6 +53,7 @@ function update_runs_json_file {
 update_runs_json_file
 
 RUN_ID=$(jq -r ".workflow_runs | map(select( .workflow_id == ${WORKFLOW_ID} )) | map(select( .head_sha == \"${HEAD_SHA}\" )) | sort_by( .run_number ) | .[-1] | .id" $RUNS_OUTPUT_JSON_FILE)
+CHECK_SUITE_ID=$(jq -r ".workflow_runs | map(select( .workflow_id == ${WORKFLOW_ID} )) | map(select( .head_sha == \"${HEAD_SHA}\" )) | sort_by( .run_number ) | .[-1] | .check_suite_id" $RUNS_OUTPUT_JSON_FILE)
 
 echo "You can observe the logs at: https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/runs/${RUN_ID}"
 
@@ -73,6 +74,33 @@ done
 git push $REMOTE --delete $BRANCH_NAME
 # git branch --delete $BRANCH_NAME
 
+
+## get artifacts
+ARTIFACTS_OUTPUT_JSON_FILE="artifacts-output.json"
+curl \
+	--silent \
+	--location \
+	--request GET \
+	--header 'Accept: application/vnd.github.everest-preview+json' \
+	--header 'Content-Type: application/json' \
+	--header "Authorization: token $GITHUB_TOKEN" \
+	--header 'cache-control: no-cache' \
+	"https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs/${RUN_ID}/artifacts" > $ARTIFACTS_OUTPUT_JSON_FILE
+
+ARCHIVE_DOWNLOAD_URL=$(jq -r ".artifacts | map(select( .name == \"artifacts\" )) | .[] | .archive_download_url" $ARTIFACTS_OUTPUT_JSON_FILE)
+curl -v -L -o archive.zip "$ARCHIVE_DOWNLOAD_URL?access_token=$GITHUB_TOKEN"
+
+# arrange artifacts in the same way as they used to be when job was executed locally
+mkdir artifacts
+cd artifacts
+mv ../archive.zip ./
+unzip archive.zip
+cd ..
+cp -R artifacts/test-reports .
+touch test-reports/Tabris_Test.xml # JUnitResultArchiver refuses to publish "old" results
+## get artifacts - end
+
+# finish with apropriate conclusion
 
 CONCLUSION=$(jq -r ".workflow_runs | map(select( .workflow_id == ${WORKFLOW_ID} )) | map(select( .head_sha == \"${HEAD_SHA}\" )) | sort_by( .run_number ) | .[-1] |  .conclusion" $RUNS_OUTPUT_JSON_FILE)
 
